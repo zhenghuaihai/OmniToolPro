@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniTool Pro</title>
+    <script src="libs/tailwindcss.js"></script>
+    <script crossorigin src="libs/react.js"></script>
+    <script crossorigin src="libs/react-dom.js"></script>
+    <script src="libs/babel.js"></script>
+    <script src="libs/lucide.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #CBD5E1; border-radius: 20px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94A3B8; }
+    </style>
+</head>
+<body class="bg-[#F8FAFC]">
+    <div id="root"></div>
+
+    <script type="text/babel" data-presets="typescript,react">
+        const { useState, useEffect, useRef } = React;
+        
+        // --- Icon Handling ---
+        // Wrapper to use Vanilla Lucide in React
+        const LucideIcon = ({ name, size = 24, className = "" }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current) {
+                    const kebabName = name.replace(/([a-z0-9]|(?=[A-Z]))([A-Z0-9])/g, '$1-$2').toLowerCase().replace(/^-/, '');
+                    ref.current.innerHTML = `<i data-lucide="${kebabName}"></i>`;
+                    lucide.createIcons({
+                        root: ref.current,
+                        attrs: {
+                            width: size,
+                            height: size,
+                            class: `lucide lucide-${kebabName} ${className}`
+                        }
+                    });
+                }
+            }, [name, size, className]);
+            return <span ref={ref} style={{ display: 'inline-flex', alignItems: 'center' }}></span>;
+        };
+
+        const Download = (p) => <LucideIcon name="Download" {...p} />;
+        const FileVideo = (p) => <LucideIcon name="FileVideo" {...p} />;
+        const Settings = (p) => <LucideIcon name="Settings" {...p} />;
+        const Database = (p) => <LucideIcon name="Database" {...p} />;
+        const HardDrive = (p) => <LucideIcon name="HardDrive" {...p} />;
+        const LayoutGrid = (p) => <LucideIcon name="LayoutGrid" {...p} />;
+        const ChevronDown = (p) => <LucideIcon name="ChevronDown" {...p} />;
+        const ChevronUp = (p) => <LucideIcon name="ChevronUp" {...p} />;
+        const LogOut = (p) => <LucideIcon name="LogOut" {...p} />;
+        const Sparkles = (p) => <LucideIcon name="Sparkles" {...p} />;
+        const Play = (p) => <LucideIcon name="Play" {...p} />;
+        const RotateCw = (p) => <LucideIcon name="RotateCw" {...p} />;
+        const CheckCircle2 = (p) => <LucideIcon name="CheckCircle2" {...p} />;
+        const FileArchive = (p) => <LucideIcon name="FileArchive" {...p} />;
+        const LinkIcon = (p) => <LucideIcon name="Link" {...p} />;
+        const AlertCircle = (p) => <LucideIcon name="AlertCircle" {...p} />;
+        const BrainCircuit = (p) => <LucideIcon name="BrainCircuit" {...p} />;
+        const FileText = (p) => <LucideIcon name="FileText" {...p} />;
+        const Share2 = (p) => <LucideIcon name="Share2" {...p} />;
+        const Copy = (p) => <LucideIcon name="Copy" {...p} />;
+        const BarChart3 = (p) => <LucideIcon name="BarChart3" {...p} />;
+        const Clock = (p) => <LucideIcon name="Clock" {...p} />;
+        const User = (p) => <LucideIcon name="User" {...p} />;
+        const Plus = (p) => <LucideIcon name="Plus" {...p} />;
+        const Loader2 = (p) => <LucideIcon name="Loader2" {...p} />;
+        const ArrowRight = (p) => <LucideIcon name="ArrowRight" {...p} />;
+        const ChevronRight = (p) => <LucideIcon name="ChevronRight" {...p} />;
+
+        // --- Types ---
+        const AppMode = {
+            BATCH_DOWNLOAD: 'BATCH_DOWNLOAD',
+            VIDEO_ANALYSIS: 'VIDEO_ANALYSIS',
+        };
+
+        const TaskStatus = {
+            IDLE: 'IDLE',
+            PENDING: 'PENDING',
+            PROCESSING: 'PROCESSING',
+            COMPLETED: 'COMPLETED',
+            ERROR: 'ERROR',
+        };
+
+        // --- Components ---
+
+        // 1. Sidebar
+        const Sidebar = ({ currentMode, onModeChange, settings, onSettingsChange, user, onLogout }) => {
+            const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+            const navItemClass = (active) => 
+                `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer ${
+                active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`;
+
+            return (
+                <div className="w-80 h-screen bg-white border-r border-slate-200 flex flex-col shadow-sm fixed left-0 top-0 z-20">
+                    <div className="p-8 pb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                                <LayoutGrid className="text-white w-5 h-5" />
+                            </div>
+                            <h1 className="text-xl font-bold text-slate-900 tracking-tight">OmniTool<span className="text-indigo-600">Pro</span></h1>
+                        </div>
+                        <p className="text-xs text-slate-400 font-medium pl-10">MEDIA RESEARCH SUITE</p>
+                    </div>
+
+                    <div className="flex-1 px-4 py-4 space-y-2">
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 mb-2">Tools</div>
+                        <div onClick={() => onModeChange(AppMode.BATCH_DOWNLOAD)} className={navItemClass(currentMode === AppMode.BATCH_DOWNLOAD)}>
+                            <Download className="w-5 h-5" />
+                            <span className="font-medium">Media Archiver</span>
+                        </div>
+                        <div onClick={() => onModeChange(AppMode.VIDEO_ANALYSIS)} className={navItemClass(currentMode === AppMode.VIDEO_ANALYSIS)}>
+                            <FileVideo className="w-5 h-5" />
+                            <span className="font-medium">Content Insight</span>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50/50">
+                        <div className="mb-6 space-y-4 px-2">
+                            <div className="space-y-2">
+                                <label className="text-xs font-medium text-slate-600">Save Preference</label>
+                                <div className="flex bg-slate-200 p-1 rounded-lg">
+                                    <button onClick={() => onSettingsChange({...settings, saveMode: 'web'})} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${settings.saveMode === 'web' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        <Database size={12} /> Web Zip
+                                    </button>
+                                    <button onClick={() => onSettingsChange({...settings, saveMode: 'local'})} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${settings.saveMode === 'local' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        <HardDrive size={12} /> Local
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-200">
+                            <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white hover:shadow-sm transition-all group">
+                                <img src={user.avatar} alt="User" className="w-10 h-10 rounded-full border border-slate-200 object-cover" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-slate-800 truncate">{user.name}</p>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-white bg-gradient-to-r from-indigo-500 to-violet-500 px-1.5 py-0.5 rounded-full">
+                                            <Sparkles size={8} /> {user.plan}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button onClick={onLogout} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Logout"><LogOut size={16} /></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 2. BatchDownloadView
+        const BatchDownloadView = ({ tasks, setTasks }) => {
+            const [inputText, setInputText] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+
+            // Poll for updates
+            useEffect(() => {
+                const interval = setInterval(async () => {
+                    try {
+                        const res = await fetch('/api/download-tasks');
+                        const data = await res.json();
+                        if (data && data.length > 0) {
+                            // Map backend status to frontend types
+                            const mapped = data.map(t => ({
+                                id: t.id,
+                                url: t.url,
+                                status: t.status === 'PENDING' ? TaskStatus.PROCESSING : (t.status === 'COMPLETED' ? TaskStatus.COMPLETED : (t.status === 'ERROR' ? TaskStatus.ERROR : TaskStatus.PROCESSING)),
+                                progress: t.progress || 0
+                            }));
+                            setTasks(mapped);
+                            
+                            // Check if still processing
+                            const anyProcessing = mapped.some(t => t.status === TaskStatus.PROCESSING || t.status === 'PENDING');
+                            setIsProcessing(anyProcessing);
+                        }
+                    } catch (e) { console.error(e); }
+                }, 1000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const handleStart = async () => {
+                if (!inputText.trim()) return;
+                setIsProcessing(true);
+                const urls = inputText.split('\n').filter(line => line.trim().length > 0);
+                
+                try {
+                    await fetch('/api/batch-download', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ urls })
+                    });
+                    setInputText('');
+                } catch (e) {
+                    alert("Failed to start download");
+                    setIsProcessing(false);
+                }
+            };
+
+            const getProgressColor = (status) => {
+                switch (status) {
+                    case TaskStatus.COMPLETED: return 'bg-emerald-500';
+                    case TaskStatus.ERROR: return 'bg-red-500';
+                    default: return 'bg-indigo-600';
+                }
+            };
+
+            const allCompleted = tasks.length > 0 && tasks.every(t => t.status === TaskStatus.COMPLETED);
+
+            const handleZipDownload = async () => {
+                try {
+                    const completedTaskIds = tasks.filter(t => t.status === TaskStatus.COMPLETED).map(t => t.id);
+                    if (completedTaskIds.length === 0) return;
+                    
+                    const res = await fetch('/api/create-zip', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ task_ids: completedTaskIds })
+                    });
+                    
+                    if (res.ok) {
+                        const data = await res.json();
+                        window.open(data.zip_url, '_blank');
+                    } else {
+                        alert("Failed to create ZIP");
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert("Error downloading ZIP");
+                }
+            };
+
+            return (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-900">Media Archiver</h2>
+                        <p className="text-slate-500 mt-1">Archive public media assets for offline analysis and fair use research.</p>
+                    </div>
+
+                    <div className="bg-white rounded-2xl p-1 shadow-sm border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+                        <textarea
+                            value={inputText}
+                            onChange={(e) => setInputText(e.target.value)}
+                            placeholder="Enter public content URLs for archival (one per line)..."
+                            className="w-full h-40 p-4 rounded-xl resize-none outline-none text-sm text-slate-700 placeholder:text-slate-400 font-mono leading-relaxed"
+                        />
+                        <div className="bg-slate-50 p-3 rounded-b-xl flex justify-between items-center border-t border-slate-100">
+                            <div className="text-xs text-slate-500 flex items-center gap-2">
+                                <LinkIcon size={14} /> <span>Supported: Direct links, Short links</span>
+                            </div>
+                            <button onClick={handleStart} disabled={isProcessing || !inputText} className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white shadow-md transition-all ${isProcessing || !inputText ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500'}`}>
+                                {isProcessing ? <RotateCw className="animate-spin w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                                {isProcessing ? 'Processing...' : 'Start Archival'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {tasks.length > 0 && (
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                                <h3 className="font-semibold text-slate-800">Archival Status</h3>
+                                <div className="flex gap-2">
+                                    {allCompleted && (
+                                        <button onClick={handleZipDownload} className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-medium hover:bg-emerald-100 transition-colors">
+                                            <FileArchive size={14} /> Export Archive
+                                        </button>
+                                    )}
+                                    <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{tasks.filter(t => t.status === TaskStatus.COMPLETED).length} / {tasks.length} Completed</span>
+                                </div>
+                            </div>
+                            <div className="divide-y divide-slate-50">
+                                {tasks.map((task) => (
+                                    <div key={task.id} className="px-6 py-4 flex items-center gap-6 hover:bg-slate-50/50 transition-colors">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                                            {task.status === TaskStatus.COMPLETED ? <CheckCircle2 className="text-emerald-500 w-5 h-5" /> : <FileArchive className="w-4 h-4" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between mb-1.5">
+                                                <p className="text-sm font-medium text-slate-700 truncate">{task.url}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-xs font-semibold ${task.status === TaskStatus.COMPLETED ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                                                        {task.status === TaskStatus.COMPLETED ? 'Done' : `${Math.round(task.progress)}%`}
+                                                    </span>
+                                                    {task.status === TaskStatus.COMPLETED && (
+                                                        <a href={`/api/download-result/${task.id}`} target="_blank" className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                                                            <Download size={12} /> Save
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                <div className={`h-full transition-all duration-300 ease-out rounded-full ${getProgressColor(task.status)}`} style={{ width: `${task.progress}%` }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="px-6 py-3 bg-slate-50 text-[10px] text-slate-400 border-t border-slate-100">
+                                Disclaimer: Use this tool responsibly. Ensure you have the right to archive content for personal research or fair use. Respect platform Terms of Service.
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // 3. VideoAnalysisView
+        const VideoAnalysisView = () => {
+            const [inputText, setInputText] = useState('');
+            const [tasks, setTasks] = useState([]);
+            const [activeTaskId, setActiveTaskId] = useState(null);
+            
+            // Poll Tasks
+            useEffect(() => {
+                const interval = setInterval(async () => {
+                    try {
+                        const res = await fetch('/api/analysis-tasks');
+                        const data = await res.json();
+                        if (data) {
+                            setTasks(data.map(t => ({
+                                ...t,
+                                status: t.status === 'PENDING' ? TaskStatus.PROCESSING : (t.status === 'COMPLETED' ? TaskStatus.COMPLETED : (t.status === 'ERROR' ? TaskStatus.ERROR : TaskStatus.PROCESSING))
+                            })));
+                        }
+                    } catch(e) {}
+                }, 2000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const handleStartBatch = async () => {
+                if (!inputText.trim()) return;
+                const urls = inputText.split('\n').filter(line => line.trim().length > 0);
+                
+                try {
+                    await fetch('/api/analyze', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ urls })
+                    });
+                    setInputText('');
+                } catch(e) { alert("Error starting analysis"); }
+            };
+
+            const activeTask = tasks.find(t => t.id === activeTaskId);
+            const hasTasks = tasks.length > 0;
+
+            const renderDetailView = () => {
+                if (!activeTask) {
+                    return (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400 p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                            <BrainCircuit size={48} className="mb-4 opacity-50" />
+                            <p className="font-medium">Select a video from the queue to view insights</p>
+                        </div>
+                    );
+                }
+
+                if (activeTask.status !== TaskStatus.COMPLETED) {
+                    return (
+                        <div className="h-full flex flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 shadow-sm p-12">
+                            <div className="relative mb-6">
+                                <div className="absolute inset-0 bg-indigo-100 rounded-full animate-ping opacity-75"></div>
+                                <div className="relative bg-white p-4 rounded-full border border-indigo-100 shadow-sm">
+                                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                                </div>
+                            </div>
+                            <h3 className="text-lg font-semibold text-slate-900 mb-2">Processing Media Content...</h3>
+                            <p className="text-slate-500 text-center max-w-sm mb-4">Stage: {activeTask.stage || 'Processing'}</p>
+                            
+                            <div className="w-64 bg-slate-100 rounded-full h-2 overflow-hidden">
+                                <div className="bg-indigo-500 h-full transition-all duration-500" style={{ width: `${activeTask.progress || 0}%` }}></div>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-2">Estimated time: ~1-2 mins</p>
+                        </div>
+                    );
+                }
+
+                if (activeTask.result) {
+                    const { result } = activeTask;
+                    return (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500 h-full flex flex-col">
+                            <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-6 text-white shadow-lg shadow-indigo-200 shrink-0">
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="flex items-center gap-2 opacity-90"><BrainCircuit size={20} /><h3 className="font-semibold">AI Executive Summary</h3></div>
+                                    <div className="flex gap-2">{(result.tags || []).map(tag => <span key={tag} className="px-2 py-0.5 bg-white/10 text-white/90 text-[10px] font-medium rounded-full border border-white/10">{tag}</span>)}</div>
+                                </div>
+                                <p className="text-sm leading-relaxed opacity-90 font-light">{result.summary}</p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
+                                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                    <h3 className="font-semibold text-slate-800 flex items-center gap-2"><FileText size={18} className="text-slate-400"/> Research Transcript</h3>
+                                    <a href={`/api/download-transcript/${activeTask.id}`} target="_blank" className="text-xs font-medium text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+                                        <Download size={12} /> Export Report
+                                    </a>
+                                </div>
+                                <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
+                                    <div className="prose prose-slate max-w-none">
+                                        {result.full_transcript ? (
+                                            result.full_transcript.split('\n').map((paragraph, idx) => (
+                                                paragraph.trim() && (
+                                                    <p key={idx} className="mb-4 text-slate-700 leading-7 text-[15px] text-justify">
+                                                        {paragraph}
+                                                    </p>
+                                                )
+                                            ))
+                                        ) : (
+                                            <p className="text-slate-400 italic">No transcript available.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+                return null;
+            };
+
+            return (
+                <div className="space-y-6 h-full flex flex-col w-full">
+                    <div className="flex justify-between items-end shrink-0">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><BrainCircuit className="text-indigo-600" /> AI Content Insight</h2>
+                            <p className="text-slate-500 mt-1">Analyze content to generate accessibility transcripts and research summaries.</p>
+                        </div>
+                        <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div> Research Engine Ready</span>
+                    </div>
+
+                    <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 shrink-0 transition-all duration-300 ${hasTasks ? 'p-2' : 'p-1'}`}>
+                        {hasTasks ? (
+                            <div className="flex gap-2 items-center">
+                                <div className="flex-1 relative">
+                                    <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Enter more public URLs for analysis..." className="w-full pl-4 pr-4 py-2 bg-slate-50 rounded-lg text-sm border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" />
+                                </div>
+                                <button onClick={handleStartBatch} disabled={!inputText.trim()} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500 flex items-center gap-2"><Plus size={16} /> Add to Queue</button>
+                            </div>
+                        ) : (
+                            <>
+                                <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Enter public content URLs here (one per line)..." className="w-full h-32 p-4 rounded-xl resize-none outline-none text-sm text-slate-700 placeholder:text-slate-400 font-mono leading-relaxed" />
+                                <div className="bg-slate-50 p-3 rounded-b-xl flex justify-end border-t border-slate-100">
+                                    <button onClick={handleStartBatch} disabled={!inputText} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg text-sm font-medium shadow-md shadow-indigo-200 transition-all flex items-center gap-2"><Sparkles size={16} /> Start Analysis</button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {hasTasks && (
+                        <div className="flex-1 flex gap-6 min-h-0 w-full">
+                            <div className="w-1/3 flex flex-col gap-4 min-w-[300px]">
+                                <div className="flex items-center justify-between text-sm text-slate-500 px-1 shrink-0">
+                                    <span className="font-semibold text-slate-700">Queue ({tasks.length})</span>
+                                    <span className="text-xs">{tasks.filter(t => t.status === TaskStatus.COMPLETED).length} Done</span>
+                                </div>
+                                <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                                    {tasks.map((task) => (
+                                        <div key={task.id} onClick={() => setActiveTaskId(task.id)} className={`p-4 rounded-xl border transition-all cursor-pointer group ${activeTaskId === task.id ? 'bg-white border-indigo-500 shadow-md ring-1 ring-indigo-500/20' : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-sm'}`}>
+                                            <div className="flex items-start gap-3">
+                                                <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${task.status === TaskStatus.COMPLETED ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                                    {task.status === TaskStatus.COMPLETED ? <CheckCircle2 size={12} /> : <Loader2 size={12} className="animate-spin" />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-xs font-medium truncate mb-1 ${activeTaskId === task.id ? 'text-indigo-900' : 'text-slate-700'}`}>{task.url}</p>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${task.status === TaskStatus.COMPLETED ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{task.status === TaskStatus.COMPLETED ? 'Ready' : 'Processing...'}</span>
+                                                        {activeTaskId === task.id && <ChevronRight size={14} className="text-indigo-500" />}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">{renderDetailView()}</div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // 4. App
+        const App = () => {
+            const [isLoggedIn, setIsLoggedIn] = useState(true);
+            const [currentMode, setCurrentMode] = useState(AppMode.BATCH_DOWNLOAD);
+            const [user, setUser] = useState({ name: "Alex Designer", email: "alex@omnitool.pro", avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80", plan: "Pro" });
+            const [settings, setSettings] = useState({ saveMode: 'web', model: 'gemini-3-flash-preview' });
+            const [downloadTasks, setDownloadTasks] = useState([]);
+
+            return (
+                <div className="flex min-h-screen bg-[#F8FAFC]">
+                    <Sidebar currentMode={currentMode} onModeChange={setCurrentMode} settings={settings} onSettingsChange={setSettings} user={user} onLogout={() => setIsLoggedIn(false)} />
+                    <main className="flex-1 ml-80 p-8 lg:p-12 w-full flex flex-col h-screen overflow-hidden">
+                        <div className="flex justify-end mb-6 shrink-0">
+                            <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200"></div> System Operational
+                            </div>
+                        </div>
+                        <div className="flex-1 min-h-0 overflow-visible flex flex-col">
+                            {currentMode === AppMode.BATCH_DOWNLOAD ? (
+                                <BatchDownloadView tasks={downloadTasks} setTasks={setDownloadTasks} />
+                            ) : (
+                                <VideoAnalysisView />
+                            )}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
