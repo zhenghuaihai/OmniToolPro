@@ -19,8 +19,37 @@ import config
 import imageio_ffmpeg
 import stat
 
+import shutil
+import time
+
+# --- Cleanup Job ---
+async def cleanup_old_files():
+    """Periodically delete files older than 1 hour in downloads folder"""
+    while True:
+        try:
+            download_dir = "downloads"
+            cutoff = time.time() - 3600 # 1 hour
+            
+            for root, dirs, files in os.walk(download_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if os.path.getmtime(file_path) < cutoff:
+                        try:
+                            os.remove(file_path)
+                            print(f"Cleaned up old file: {file_path}")
+                        except Exception as e:
+                            print(f"Error cleaning {file_path}: {e}")
+        except Exception as e:
+            print(f"Cleanup task error: {e}")
+            
+        await asyncio.sleep(600) # Run every 10 mins
+
 # --- Setup ---
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(cleanup_old_files())
 
 app.add_middleware(
     CORSMiddleware,
@@ -212,6 +241,8 @@ async def process_analysis_task(task_id: str, url: str, api_key: str):
         # Cleanup
         if os.path.exists(audio_path):
             os.remove(audio_path)
+        if os.path.exists(video_path):
+            os.remove(video_path)
             
         task["status"] = "COMPLETED"
         task["progress"] = 100
