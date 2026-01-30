@@ -45,15 +45,9 @@ class BatchDownloader:
         return self.downloaded_files
 
     def is_ytdlp_url(self, url):
-        # Heuristic: if it doesn't look like a direct file, try yt-dlp
-        # Or check for common video sites
-        common_sites = ['youtube.com', 'youtu.be', 'bilibili.com', 'tiktok.com', 'douyin.com', 'vimeo.com', 'twitter.com', 'x.com']
-        if any(site in url for site in common_sites):
-            return True
-        # If it doesn't have a file extension, assume it might be a video page
-        if not os.path.splitext(url)[1]:
-            return True
-        return False
+        # Always use yt-dlp for everything, because it's robust and handles redirects/headers better.
+        # Direct file download logic is often brittle.
+        return True
 
     async def download_with_ytdlp(self, task):
         if not self.is_running: return
@@ -62,7 +56,7 @@ class BatchDownloader:
         url = task['url']
         
         if self.status_callback:
-            self.status_callback(index, "Analyzing (yt-dlp)...")
+            self.status_callback(index, "Analyzing...")
             
         def ytdlp_progress_hook(d):
             if not self.is_running:
@@ -83,38 +77,45 @@ class BatchDownloader:
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
-            'ffmpeg_location': os.path.dirname(ffmpeg_path), # yt-dlp expects dir
             'quiet': True,
             'no_warnings': True,
+            # Force IPv4 to avoid IPv6 issues on some servers (Render)
+            'source_address': '0.0.0.0', 
+            # Use user agent to look like browser
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         }
+        
+        # Only add ffmpeg_location if we found a valid ffmpeg
+        if ffmpeg_path and os.path.exists(ffmpeg_path):
+             ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
         
         try:
             # yt-dlp is blocking, run in executor
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+            
+            # 1. Extract Info (to get filename)
+            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=False))
+            filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
+            
+            # 2. Download
             await loop.run_in_executor(None, lambda: self._run_ytdlp(ydl_opts, url))
             
             if self.status_callback:
                 self.status_callback(index, "Completed")
             
-            # Find the downloaded file (heuristic)
-            # Since we don't know the exact filename easily without parsing, 
-            # we might just scan dir for newest file or return success.
-            # For simplicity, we just mark success. 
-            # Ideally we capture the filename from info_dict.
-            # Re-run extract_info to get filename? No, expensive.
-            # Let's trust it worked.
-            
-            # Use 'downloaded_files' only if we can verify.
-            # We can use 'prepare_filename' from yt-dlp logic if needed, but let's skip for now.
-            # For 'Batch Download' it might be tricky to zip if we don't know the name.
-            # FIX: Get filename from info first.
-            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=False))
-            filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
             self.downloaded_files.append(filename)
 
         except Exception as e:
+            error_msg = strip_ansi(str(e))
+            # Simplify error message for UI
+            if "HTTP Error 403" in error_msg:
+                error_msg = "Access Denied (403)"
+            elif "HTTP Error 404" in error_msg:
+                error_msg = "Video Not Found"
+            
             if self.status_callback:
-                self.status_callback(index, f"Error: {strip_ansi(str(e))}")
+                self.status_callback(index, f"Error: {error_msg}")
+            print(f"Download Error for {url}: {e}")
 
     def _run_ytdlp(self, opts, url):
         with yt_dlp.YoutubeDL(opts) as ydl:
