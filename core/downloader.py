@@ -78,31 +78,34 @@ class BatchDownloader:
                 if self.progress_callback:
                     self.progress_callback(index, 100)
 
-        # Force a generic User-Agent that works well on servers
-        ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-
+        # Minimalist Options - The "Nuclear Option" for compatibility
+        # Remove all fancy headers, anti-bot, IP binding, etc.
+        # Just pure, raw yt-dlp with cookie/cache disabled.
+        
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
             'quiet': False,
             'verbose': True,
             'no_warnings': False,
-            'socket_timeout': 60, # Increased timeout
-            'retries': 20, # More retries
             
-            # Force IPv4 again, but without binding to specific IP
-            # This forces name resolution to return A records only
-            'force_ipv4': True,
+            # Use system default network stack (safest on cloud)
+            # 'source_address': '0.0.0.0', # REMOVED
+            # 'force_ipv4': True, # REMOVED - Let OS decide
             
-            'user_agent': ua,
+            # Disable cache to prevent stale headers
+            'cachedir': False,
+            
+            # Basic retries
+            'socket_timeout': 30,
+            'retries': 10,
+            
+            # Compatibility
             'nocheckcertificate': True,
-            'ignoreerrors': True, 
+            'ignoreerrors': True,
             
-            # Format: prioritizing mp4 but falling back to anything
+            # Format: prioritizing mp4
             'format': 'best[ext=mp4]/best',
-            
-            # Post-processor to ensure we get a clean file
-            'writethumbnail': False,
         }
         
         ffmpeg_path = get_ffmpeg_path()
