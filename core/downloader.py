@@ -77,12 +77,31 @@ class BatchDownloader:
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
-            'quiet': True,
-            'no_warnings': True,
-            # Force IPv4 to avoid IPv6 issues on some servers (Render)
+            'quiet': False, # Enable logs to see what's happening in Render console
+            'verbose': True,
+            'no_warnings': False,
+            # Network Optimizations
             'source_address': '0.0.0.0', 
-            # Use user agent to look like browser
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'socket_timeout': 15,
+            'retries': 10,
+            'fragment_retries': 10,
+            # Anti-Bot / Anti-Blocking
+            'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'referer': 'https://www.google.com/',
+            'nocheckcertificate': True,
+            # YouTube specific bypasses (Magic bullet for server-side 403/throttling)
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web'],
+                    'player_skip': ['webpage', 'configs', 'js'],
+                    'skip': ['dash', 'hls'],
+                },
+                'tiktok': {
+                    'app_version': ['30.0.0'],
+                }
+            },
+            # Format selection (Avoid ultra-high res that might choke bandwidth)
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         }
         
         # Only add ffmpeg_location if we found a valid ffmpeg
