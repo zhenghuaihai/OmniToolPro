@@ -54,25 +54,31 @@ class BatchDownloader:
         url = task['url']
         
         if self.status_callback:
-            self.status_callback(index, "Connecting...")
+            self.status_callback(index, "Processing...")
             
+        # Use a simpler, more robust hook that doesn't rely on 'status' field presence
         def ytdlp_progress_hook(d):
             if not self.is_running:
                 raise Exception("Stopped")
-            if d['status'] == 'downloading':
+            
+            # Print to logs for debugging Render
+            print(f"yt-dlp hook: {d.get('status', 'unknown')} - {d.get('_percent_str', 'N/A')}")
+            
+            if d.get('status') == 'downloading':
                 if self.progress_callback:
-                    p = d.get('_percent_str', '0%').replace('%','')
+                    p_str = d.get('_percent_str', '0%').replace('%','')
                     try:
-                        self.progress_callback(index, int(float(p)))
+                        # Handle ANSI codes if present
+                        p_str = strip_ansi(p_str)
+                        self.progress_callback(index, int(float(p_str)))
                     except: pass
                 if self.status_callback:
                     self.status_callback(index, "Downloading...")
-            elif d['status'] == 'finished':
+            elif d.get('status') == 'finished':
                 if self.progress_callback:
                     self.progress_callback(index, 100)
 
         # Force a generic User-Agent that works well on servers
-        # Using a very standard Chrome UA
         ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
         ydl_opts = {
@@ -81,25 +87,24 @@ class BatchDownloader:
             'quiet': False,
             'verbose': True,
             'no_warnings': False,
-            'socket_timeout': 30,
-            'retries': 10,
+            'socket_timeout': 60, # Increased timeout
+            'retries': 20, # More retries
             
-            # CRITICAL: Do NOT force source_address on Render/Cloud if they use NAT/IPv6
-            # Removing 'source_address' might actually fix it if '0.0.0.0' is blocked
-            # 'source_address': '0.0.0.0', 
+            # Force IPv4 again, but without binding to specific IP
+            # This forces name resolution to return A records only
+            'force_ipv4': True,
             
             'user_agent': ua,
             'nocheckcertificate': True,
-            'ignoreerrors': True, # Don't crash on one error
-            
-            # Cookies from a browser (optional, can be passed if needed)
-            # 'cookiesfrombrowser': ('chrome',), 
+            'ignoreerrors': True, 
             
             # Format: prioritizing mp4 but falling back to anything
             'format': 'best[ext=mp4]/best',
+            
+            # Post-processor to ensure we get a clean file
+            'writethumbnail': False,
         }
         
-        # Check for ffmpeg but don't fail if missing (yt-dlp can download without it sometimes)
         ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path and os.path.exists(ffmpeg_path):
              ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
