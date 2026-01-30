@@ -45,8 +45,6 @@ class BatchDownloader:
         return self.downloaded_files
 
     def is_ytdlp_url(self, url):
-        # Always use yt-dlp for everything, because it's robust and handles redirects/headers better.
-        # Direct file download logic is often brittle.
         return True
 
     async def download_with_ytdlp(self, task):
@@ -56,7 +54,7 @@ class BatchDownloader:
         url = task['url']
         
         if self.status_callback:
-            self.status_callback(index, "Analyzing...")
+            self.status_callback(index, "Connecting...")
             
         def ytdlp_progress_hook(d):
             if not self.is_running:
@@ -73,65 +71,61 @@ class BatchDownloader:
                 if self.progress_callback:
                     self.progress_callback(index, 100)
 
-        ffmpeg_path = get_ffmpeg_path()
+        # Force a generic User-Agent that works well on servers
+        # Using a very standard Chrome UA
+        ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
-            'quiet': False, # Enable logs to see what's happening in Render console
+            'quiet': False,
             'verbose': True,
             'no_warnings': False,
-            # Network Optimizations
-            'source_address': '0.0.0.0', 
-            'socket_timeout': 15,
+            'socket_timeout': 30,
             'retries': 10,
-            'fragment_retries': 10,
-            # Anti-Bot / Anti-Blocking
-            'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'referer': 'https://www.google.com/',
+            
+            # CRITICAL: Do NOT force source_address on Render/Cloud if they use NAT/IPv6
+            # Removing 'source_address' might actually fix it if '0.0.0.0' is blocked
+            # 'source_address': '0.0.0.0', 
+            
+            'user_agent': ua,
             'nocheckcertificate': True,
-            # YouTube specific bypasses (Magic bullet for server-side 403/throttling)
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'ios', 'web'],
-                    'player_skip': ['webpage', 'configs', 'js'],
-                    'skip': ['dash', 'hls'],
-                },
-                'tiktok': {
-                    'app_version': ['30.0.0'],
-                }
-            },
-            # Format selection (Avoid ultra-high res that might choke bandwidth)
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'ignoreerrors': True, # Don't crash on one error
+            
+            # Cookies from a browser (optional, can be passed if needed)
+            # 'cookiesfrombrowser': ('chrome',), 
+            
+            # Format: prioritizing mp4 but falling back to anything
+            'format': 'best[ext=mp4]/best',
         }
         
-        # Only add ffmpeg_location if we found a valid ffmpeg
+        # Check for ffmpeg but don't fail if missing (yt-dlp can download without it sometimes)
+        ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path and os.path.exists(ffmpeg_path):
              ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
         
         try:
-            # yt-dlp is blocking, run in executor
             loop = asyncio.get_running_loop()
             
-            # 1. Extract Info (to get filename)
-            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=False))
-            filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
-            
-            # 2. Download
+            # Direct download attempt without pre-extraction (faster, less prone to blocking)
             await loop.run_in_executor(None, lambda: self._run_ytdlp(ydl_opts, url))
             
             if self.status_callback:
                 self.status_callback(index, "Completed")
             
-            self.downloaded_files.append(filename)
+            # Scan for the file we just downloaded
+            # Since we didn't get the filename upfront, we look for the most recent file
+            # This is a robust fallback
+            files = sorted(
+                [os.path.join(self.dest_folder, f) for f in os.listdir(self.dest_folder)],
+                key=os.path.getmtime,
+                reverse=True
+            )
+            if files:
+                self.downloaded_files.append(files[0])
 
         except Exception as e:
             error_msg = strip_ansi(str(e))
-            # Simplify error message for UI
-            if "HTTP Error 403" in error_msg:
-                error_msg = "Access Denied (403)"
-            elif "HTTP Error 404" in error_msg:
-                error_msg = "Video Not Found"
-            
             if self.status_callback:
                 self.status_callback(index, f"Error: {error_msg}")
             print(f"Download Error for {url}: {e}")
