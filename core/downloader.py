@@ -56,19 +56,14 @@ class BatchDownloader:
         if self.status_callback:
             self.status_callback(index, "Processing...")
             
-        # Use a simpler, more robust hook that doesn't rely on 'status' field presence
         def ytdlp_progress_hook(d):
             if not self.is_running:
                 raise Exception("Stopped")
-            
-            # Print to logs for debugging Render
-            print(f"yt-dlp hook: {d.get('status', 'unknown')} - {d.get('_percent_str', 'N/A')}")
             
             if d.get('status') == 'downloading':
                 if self.progress_callback:
                     p_str = d.get('_percent_str', '0%').replace('%','')
                     try:
-                        # Handle ANSI codes if present
                         p_str = strip_ansi(p_str)
                         self.progress_callback(index, int(float(p_str)))
                     except: pass
@@ -78,69 +73,86 @@ class BatchDownloader:
                 if self.progress_callback:
                     self.progress_callback(index, 100)
 
-        # Minimalist Options - The "Nuclear Option" for compatibility
-        # Remove all fancy headers, anti-bot, IP binding, etc.
-        # Just pure, raw yt-dlp with cookie/cache disabled.
+        # ---------------------------------------------------------------------
+        # THE FIX: Use cookies to bypass age-gate/sign-in restrictions
+        # ---------------------------------------------------------------------
+        # We will attempt to use a 'cookies.txt' if it exists in the root dir.
+        # This is often required for YouTube/TikTok on server IPs.
+        
+        cookies_path = os.path.join(os.getcwd(), 'cookies.txt')
         
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
             'quiet': False,
-            'verbose': True,
+            'verbose': True, # Enable verbose logging for Render
             'no_warnings': False,
             
-            # Use system default network stack (safest on cloud)
-            # 'source_address': '0.0.0.0', # REMOVED
-            # 'force_ipv4': True, # REMOVED - Let OS decide
-            
-            # Disable cache to prevent stale headers
-            'cachedir': False,
-            
-            # Basic retries
+            # --- Network & Stability ---
             'socket_timeout': 30,
             'retries': 10,
             
-            # Compatibility
+            # --- Compatibility ---
             'nocheckcertificate': True,
             'ignoreerrors': True,
             
-            # Format: prioritizing mp4
+            # --- Format ---
             'format': 'best[ext=mp4]/best',
+            
+            # --- Post-Processing ---
+            'writethumbnail': False,
         }
         
+        if os.path.exists(cookies_path):
+            ydl_opts['cookiefile'] = cookies_path
+            print(f"Using cookies from: {cookies_path}")
+            
         ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path and os.path.exists(ffmpeg_path):
              ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
         
         try:
             loop = asyncio.get_running_loop()
-            
-            # Direct download attempt without pre-extraction (faster, less prone to blocking)
             await loop.run_in_executor(None, lambda: self._run_ytdlp(ydl_opts, url))
             
             if self.status_callback:
                 self.status_callback(index, "Completed")
             
-            # Scan for the file we just downloaded
-            # Since we didn't get the filename upfront, we look for the most recent file
-            # This is a robust fallback
+            # Robust file detection
             files = sorted(
                 [os.path.join(self.dest_folder, f) for f in os.listdir(self.dest_folder)],
                 key=os.path.getmtime,
                 reverse=True
             )
             if files:
-                self.downloaded_files.append(files[0])
+                # Filter out partial downloads
+                valid_files = [f for f in files if not f.endswith('.part') and not f.endswith('.ytdl')]
+                if valid_files:
+                    self.downloaded_files.append(valid_files[0])
+                else:
+                     raise Exception("Download finished but no file found (maybe merged?)")
 
         except Exception as e:
             error_msg = strip_ansi(str(e))
+            # Friendly error messages
+            if "Sign in to confirm your age" in error_msg:
+                error_msg = "Age Restricted (Cookies Required)"
+            elif "Video unavailable" in error_msg:
+                error_msg = "Video Deleted/Private"
+            elif "HTTP Error 429" in error_msg:
+                error_msg = "Too Many Requests (IP Blocked)"
+                
             if self.status_callback:
                 self.status_callback(index, f"Error: {error_msg}")
             print(f"Download Error for {url}: {e}")
 
     def _run_ytdlp(self, opts, url):
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            # Re-raise to be caught by the async wrapper
+            raise e
 
     async def download_file(self, session, task):
         if not self.is_running:
