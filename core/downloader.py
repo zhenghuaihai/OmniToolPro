@@ -54,97 +54,112 @@ class BatchDownloader:
         url = task['url']
         
         if self.status_callback:
-            self.status_callback(index, "Processing...")
+            self.status_callback(index, "Initializing...")
             
         def ytdlp_progress_hook(d):
+            # IMPORTANT: Do not raise Exception here, it can crash the thread silently
             if not self.is_running:
-                raise Exception("Stopped")
+                return 
             
+            # Print to stdout so we can see it in Render logs
+            print(f"HOOK [{d.get('status')}]: {d.get('_percent_str')}")
+
             if d.get('status') == 'downloading':
-                if self.progress_callback:
-                    p_str = d.get('_percent_str', '0%').replace('%','')
-                    try:
-                        p_str = strip_ansi(p_str)
-                        self.progress_callback(index, int(float(p_str)))
-                    except: pass
                 if self.status_callback:
                     self.status_callback(index, "Downloading...")
+                if self.progress_callback:
+                    try:
+                        p_str = d.get('_percent_str', '0%').replace('%','')
+                        p_str = strip_ansi(p_str)
+                        self.progress_callback(index, int(float(p_str)))
+                    except: 
+                        pass
             elif d.get('status') == 'finished':
                 if self.progress_callback:
                     self.progress_callback(index, 100)
+                if self.status_callback:
+                    self.status_callback(index, "Processing File...")
 
         # ---------------------------------------------------------------------
-        # THE FIX: Use cookies to bypass age-gate/sign-in restrictions
+        # THE FIX: Cookies + Cloudflare Warp / Proxy logic (if available)
         # ---------------------------------------------------------------------
-        # We will attempt to use a 'cookies.txt' if it exists in the root dir.
-        # This is often required for YouTube/TikTok on server IPs.
-        
         cookies_path = os.path.join(os.getcwd(), 'cookies.txt')
         
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
             'quiet': False,
-            'verbose': True, # Enable verbose logging for Render
+            'verbose': True,
             'no_warnings': False,
             
-            # --- Network & Stability ---
-            'socket_timeout': 30,
-            'retries': 10,
+            # --- Network ---
+            # Increase timeout significantly for slow cloud starts
+            'socket_timeout': 60,
+            'retries': 20,
             
-            # --- Compatibility ---
-            'nocheckcertificate': True,
-            'ignoreerrors': True,
+            # --- Anti-Block ---
+            # Sometimes 'android' client works better on cloud IPs than 'web'
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web'],
+                },
+            },
             
             # --- Format ---
-            'format': 'best[ext=mp4]/best',
+            # Relax format to ensure SOMETHING downloads
+            'format': 'best',
             
-            # --- Post-Processing ---
-            'writethumbnail': False,
+            # --- Certs ---
+            'nocheckcertificate': True,
+            'ignoreerrors': True,
         }
         
         if os.path.exists(cookies_path):
             ydl_opts['cookiefile'] = cookies_path
-            print(f"Using cookies from: {cookies_path}")
-            
+        
         ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path and os.path.exists(ffmpeg_path):
              ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
         
         try:
             loop = asyncio.get_running_loop()
+            
+            # Use run_in_executor to prevent blocking the async loop
+            print(f"Starting download for: {url}")
             await loop.run_in_executor(None, lambda: self._run_ytdlp(ydl_opts, url))
+            print(f"Download finished for: {url}")
             
-            if self.status_callback:
-                self.status_callback(index, "Completed")
-            
-            # Robust file detection
+            # Verify file existence
             files = sorted(
                 [os.path.join(self.dest_folder, f) for f in os.listdir(self.dest_folder)],
                 key=os.path.getmtime,
                 reverse=True
             )
+            
+            found = False
             if files:
-                # Filter out partial downloads
-                valid_files = [f for f in files if not f.endswith('.part') and not f.endswith('.ytdl')]
-                if valid_files:
-                    self.downloaded_files.append(valid_files[0])
-                else:
-                     raise Exception("Download finished but no file found (maybe merged?)")
+                # Check if the newest file was created recently (within last 5 mins)
+                # to avoid picking up old files
+                import time
+                if time.time() - os.path.getmtime(files[0]) < 300:
+                    valid_files = [f for f in files if not f.endswith('.part') and not f.endswith('.ytdl')]
+                    if valid_files:
+                        self.downloaded_files.append(valid_files[0])
+                        found = True
+            
+            if found:
+                if self.status_callback:
+                    self.status_callback(index, "Completed")
+            else:
+                # If yt-dlp didn't raise but no file found, it might be a silent failure or merge
+                if self.status_callback:
+                    self.status_callback(index, "Failed (No File)")
 
         except Exception as e:
             error_msg = strip_ansi(str(e))
-            # Friendly error messages
-            if "Sign in to confirm your age" in error_msg:
-                error_msg = "Age Restricted (Cookies Required)"
-            elif "Video unavailable" in error_msg:
-                error_msg = "Video Deleted/Private"
-            elif "HTTP Error 429" in error_msg:
-                error_msg = "Too Many Requests (IP Blocked)"
-                
+            print(f"Download Exception: {e}")
             if self.status_callback:
                 self.status_callback(index, f"Error: {error_msg}")
-            print(f"Download Error for {url}: {e}")
 
     def _run_ytdlp(self, opts, url):
         try:
