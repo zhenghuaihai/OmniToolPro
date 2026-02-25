@@ -80,11 +80,9 @@ class BatchDownloader:
                 if self.status_callback:
                     self.status_callback(index, "Processing File...")
 
-        # ---------------------------------------------------------------------
-        # THE FIX: Cookies + Cloudflare Warp / Proxy logic (if available)
-        # ---------------------------------------------------------------------
+        # Minimalist Options - The "Nuclear Option" for compatibility
         cookies_path = os.path.join(os.getcwd(), 'cookies.txt')
-        
+
         ydl_opts = {
             'outtmpl': os.path.join(self.dest_folder, '%(title)s.%(ext)s'),
             'progress_hooks': [ytdlp_progress_hook],
@@ -93,30 +91,40 @@ class BatchDownloader:
             'no_warnings': False,
             
             # --- Network ---
-            # Increase timeout significantly for slow cloud starts
-            'socket_timeout': 60,
-            'retries': 20,
+            # Remove all socket timeouts and retries that might be conflicting
+            # Let yt-dlp manage its own connection logic
             
-            # --- Anti-Block ---
-            # Sometimes 'android' client works better on cloud IPs than 'web'
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'web'],
-                },
-            },
-            
-            # --- Format ---
-            # Relax format to ensure SOMETHING downloads
-            'format': 'best',
-            
-            # --- Certs ---
+            # --- Compatibility ---
             'nocheckcertificate': True,
             'ignoreerrors': True,
+            
+            # --- Format ---
+            # Fallback to ANY format if mp4 fails
+            'format': 'best',
+            
+            # --- Post-Processing ---
+            'writethumbnail': False,
+            
+            # --- FORCE GENERIC EXTRACTOR ---
+            # Sometimes specific extractors (like youtube) have complex logic that fails on cloud
+            # But we can't easily force generic.
+            
+            # --- COOKIES (Attempt to load from env var if file missing) ---
+            # This allows passing cookies via Render Environment Variable 'COOKIES_CONTENT'
         }
         
+        # Check for cookies file
         if os.path.exists(cookies_path):
             ydl_opts['cookiefile'] = cookies_path
-        
+        elif os.environ.get('COOKIES_CONTENT'):
+            # Create temp cookie file from env var
+            try:
+                with open(cookies_path, 'w') as f:
+                    f.write(os.environ['COOKIES_CONTENT'])
+                ydl_opts['cookiefile'] = cookies_path
+                print("Created cookies.txt from environment variable")
+            except: pass
+            
         ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path and os.path.exists(ffmpeg_path):
              ydl_opts['ffmpeg_location'] = os.path.dirname(ffmpeg_path)
@@ -124,12 +132,17 @@ class BatchDownloader:
         try:
             loop = asyncio.get_running_loop()
             
-            # Use run_in_executor to prevent blocking the async loop
             print(f"Starting download for: {url}")
+            # Use run_in_executor to prevent blocking the async loop
             await loop.run_in_executor(None, lambda: self._run_ytdlp(ydl_opts, url))
             print(f"Download finished for: {url}")
             
-            # Verify file existence
+            if self.status_callback:
+                self.status_callback(index, "Verifying...")
+
+            # Robust file detection - wait a bit for file system consistency
+            await asyncio.sleep(2) 
+            
             files = sorted(
                 [os.path.join(self.dest_folder, f) for f in os.listdir(self.dest_folder)],
                 key=os.path.getmtime,
@@ -138,10 +151,9 @@ class BatchDownloader:
             
             found = False
             if files:
-                # Check if the newest file was created recently (within last 5 mins)
-                # to avoid picking up old files
+                # Check if the newest file was created recently (within last 10 mins)
                 import time
-                if time.time() - os.path.getmtime(files[0]) < 300:
+                if time.time() - os.path.getmtime(files[0]) < 600:
                     valid_files = [f for f in files if not f.endswith('.part') and not f.endswith('.ytdl')]
                     if valid_files:
                         self.downloaded_files.append(valid_files[0])
@@ -151,7 +163,6 @@ class BatchDownloader:
                 if self.status_callback:
                     self.status_callback(index, "Completed")
             else:
-                # If yt-dlp didn't raise but no file found, it might be a silent failure or merge
                 if self.status_callback:
                     self.status_callback(index, "Failed (No File)")
 
